@@ -27,7 +27,7 @@ exports.findById = function(id) {
 exports.findByProperty = function(property, value) {
   return _storage.toList().find(item => {
     const propertyValue = item.get(property);
-    if(propertyValue.toUpperCase || value.toUpperCase) {
+    if(propertyValue && value && (propertyValue.toUpperCase || value.toUpperCase)) {
       if(propertyValue.toUpperCase() === value.toUpperCase()) {
         return item;
       }

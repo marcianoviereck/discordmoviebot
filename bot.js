@@ -38,7 +38,6 @@ bot.on('message', function (user, userID, channelID, message, evt) {
         const formattedDate = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDay()}`;
         const foundGenre = internalStorage.findByProperty('name', genre_arg);
 
-        logger.info('found', foundGenre.get('name'));
         const genreParam = genre_arg && foundGenre ? `&with_genres=${foundGenre.get('id')}` : '';
 
         switch(cmd) {
@@ -71,7 +70,19 @@ bot.on('message', function (user, userID, channelID, message, evt) {
                });
               bot.sendMessage({
                   to: channelID,
-                  message: `${genresText}`
+                  message: `I know the following genres:\n${genresText}`
+              });
+            break;
+            case 'moviebothelp':
+              bot.sendMessage({
+                  to: channelID,
+                  message: `I know the following commands:
+                  \n!genres: shows the list of genres I know
+                  \n!newmovie: returns a random new moviebothelp
+                  \n!newmovie [genre] returns a new movie with that genre
+                  \n!oldmovie [genre] returns an old movie (with that genre)
+                  \n!popularmovie\m!unpopularmovie\n!futuremovie\n\n
+                  you get the idea`
               });
             break;
          }
