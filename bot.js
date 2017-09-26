@@ -1,9 +1,10 @@
-var request = require('ajax-request');
-var immutableJS = require('immutable');
-var Discord = require('discord.io');
-var logger = require('winston');
-var auth = require('./auth.json');
-var utils = require('./utils.js');
+const immutableJS = require('immutable');
+const Discord = require('discord.io');
+const logger = require('winston');
+const auth = require('./auth.json');
+const utils = require('./utils.js');
+const fetches = require('./fetches.js');
+const internalStorage = require('./internalStorage.js');
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -13,131 +14,65 @@ logger.add(logger.transports.Console, {
 logger.level = 'debug';
 
 // Initialize Discord Bot
-var bot = new Discord.Client({
+const bot = new Discord.Client({
    token: auth.token,
    autorun: true
 });
-
-function doRequest(url, onSuccess) {
-  request({
-     url: `${url}`,
-     method: 'GET',
-     data: '',
-   }, function(err, res, body) {
-     onSuccess(body);
-   });
-}
-
-function fetchImage(image, channelID) {
-  doRequest(`https://image.tmdb.org/t/p/w500${image}`,
-    function(body) {
-      bot.sendMessage({
-          to: channelID,
-          message: body
-      });
-    });
-}
-
-function fetchRandomMovie(channelID) {
-  doRequest(`https://api.themoviedb.org/4/list/1?api_key=${auth.api_key}`, function(body) {
-
-    var bodyAsJS = immutableJS.fromJS(JSON.parse(body));
-    var movies = bodyAsJS.get('results');
-
-    var randomIndex = Math.floor((Math.random() * movies.count()));
-    var movie = movies.get(randomIndex);
-
-    var message = `Random movie: ${movie.get('title')}`;
-
-    bot.sendMessage({
-        to: channelID,
-        message: message
-    });
-    logger.info(movie.get('poster_path'));
-
-    bot.sendMessage({
-        to: channelID,
-        message: `https://image.tmdb.org/t/p/w500${movie.get('poster_path')}`
-    });
-  });
-}
-
-function fetchMovie(channelID, message, filterFunction, sorting, extraParams) {
-  let params = '';
-  if (sorting) {
-    params = params.concat(`&sort_by=${sorting}`);
-  }
-
-  if (extraParams) {
-    params = params.concat(extraParams);
-  }
-
-  logger.info(params);
-  doRequest(`https://api.themoviedb.org/3/discover/movie?api_key=${auth.api_key}&language=en-US${params}&include_adult=false&include_video=true&page=1`, function(body) {
-
-    var bodyAsJS = immutableJS.fromJS(JSON.parse(body));
-    var movies = filterFunction(bodyAsJS.get('results'));
-
-    var randomIndex = Math.floor((Math.random() * movies.count()));
-    var movie = movies.get(randomIndex);
-
-    bot.sendMessage({
-        to: channelID,
-        message: movie ? `${message}: ${movie.get('release_date')} || ${movie.get('title')}` : 'sorry found nothing..'
-    });
-
-    if(movie) {
-      logger.info(movie.get('poster_path'));
-
-      bot.sendMessage({
-          to: channelID,
-          message: `https://image.tmdb.org/t/p/w500${movie.get('poster_path')}`
-      });
-    }
-  });
-}
-
 
 bot.on('ready', function (evt) {
     logger.info('Connected');
     logger.info('Logged in as: ');
     logger.info(bot.username + ' - (' + bot.id + ')');
+    fetches.fetchGenres();
 });
 
 
 bot.on('message', function (user, userID, channelID, message, evt) {
     if (message.substring(0, 1) == '!') {
-        var args = message.substring(1).split(' ');
-        var cmd = args[0];
+        let args = message.substring(1).split(' ');
+        logger.info(args);
+        const cmd = args[0];
+        const genre_arg = args.length > 1 ? args[1] : null;
 
-        args = args.splice(1);
+        const now = new Date();
+        const formattedDate = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDay()}`;
+        const foundGenre = internalStorage.findByProperty('name', genre_arg);
+
+        logger.info('found', foundGenre.get('name'));
+        const genreParam = genre_arg && foundGenre ? `&with_genres=${foundGenre.get('id')}` : '';
+
         switch(cmd) {
             case 'randommovie':
-              fetchRandomMovie(channelID);
+              fetches.fetchMovie(channelID, bot, utils.withPosterPathAndNotInFuture, genreParam);
             break;
             case 'popularmovie':
-              fetchMovie(channelID, 'That shit popular', utils.withPosterPathAndNotInFuture, 'popularity.desc');
+              fetches.fetchMovie(channelID, bot, utils.withPosterPathAndNotInFuture, 'popularity.desc', genreParam);
             break;
             case 'unpopularmovie':
-              fetchMovie(channelID, 'Bottom of the barrel', utils.withPosterPathAndNotInFuture, 'popularity.asc');
+              fetches.fetchMovie(channelID, bot, utils.withPosterPathAndNotInFuture, 'popularity.asc', genreParam);
             break;
             case 'newmovie':
-              const now = new Date();
-              const formattedDate = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDay()}`;
-              logger.info(formattedDate);
-              fetchMovie(channelID, 'Newnew', utils.withPosterPathAndNotInFuture, `release_date.desc`, `&release_date.lte=${formattedDate}`);
+              fetches.fetchMovie(channelID, bot, utils.withPosterPathAndNotInFuture, `release_date.desc`, `&release_date.lte=${formattedDate}${genreParam}`);
             break;
             case 'futuremovie':
-              fetchMovie(channelID, 'FUTUREEE', utils.withPosterPathAndInFuture, `release_date.desc`);
+              fetches.fetchMovie(channelID, bot, utils.withPosterPathAndInFuture, `release_date.desc`, genreParam);
             break;
             case 'oldmovie':
-              fetchMovie(channelID, 'Old ass movie', utils.withPosterPath, 'release_date.asc');
+              fetches.fetchMovie(channelID, bot, utils.withPosterPath, 'release_date.asc', genreParam);
             break;
-            case 'muchrevenue':
-              fetchMovie(channelID, 'Get money', utils.withPosterPath, 'revenue.desc');
-            break;
-            case 'littlerevenue':
-              fetchMovie(channelID, 'Stay broke', utils.withPosterPath, 'revenue.asc');
+            case 'genres':
+              const genresList = internalStorage.getAll().toList();
+              let genresText = '';
+               genresList.forEach((genre, index) => {
+                 genresText = genresText.concat(genre.get('name'));
+                 if(index < genresList.count() - 1) {
+                   genresText = genresText.concat(', ')
+                 }
+               });
+              bot.sendMessage({
+                  to: channelID,
+                  message: `${genresText}`
+              });
             break;
          }
      }
