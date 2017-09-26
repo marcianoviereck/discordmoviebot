@@ -3,6 +3,7 @@ var immutableJS = require('immutable');
 var Discord = require('discord.io');
 var logger = require('winston');
 var auth = require('./auth.json');
+var utils = require('./utils.js');
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -61,8 +62,18 @@ function fetchRandomMovie(channelID) {
   });
 }
 
-function fetchMovie(channelID, message, sorting, filterFunction) {
-  doRequest(`https://api.themoviedb.org/3/discover/movie?api_key=${auth.api_key}&language=en-US&sort_by=${sorting}&include_adult=false&include_video=true&page=1`, function(body) {
+function fetchMovie(channelID, message, filterFunction, sorting, extraParams) {
+  let params = '';
+  if (sorting) {
+    params = params.concat(`&sort_by=${sorting}`);
+  }
+
+  if (extraParams) {
+    params = params.concat(extraParams);
+  }
+
+  logger.info(params);
+  doRequest(`https://api.themoviedb.org/3/discover/movie?api_key=${auth.api_key}&language=en-US${params}&include_adult=false&include_video=true&page=1`, function(body) {
 
     var bodyAsJS = immutableJS.fromJS(JSON.parse(body));
     var movies = filterFunction(bodyAsJS.get('results'));
@@ -105,60 +116,28 @@ bot.on('message', function (user, userID, channelID, message, evt) {
               fetchRandomMovie(channelID);
             break;
             case 'popularmovie':
-              const filterFunction = function(movies) {
-                return movies.take(20).filter(movie => {
-                  return movie.get('poster_path') && new Date(movie.get('release_date')).getTime() < new Date().getTime();
-                });
-              }
-              fetchMovie(channelID, 'That shit popular', 'popularity.desc', filterFunction);
+              fetchMovie(channelID, 'That shit popular', utils.withPosterPathAndNotInFuture, 'popularity.desc');
             break;
             case 'unpopularmovie':
-              const filterFunction2 = function(movies) {
-                return movies.take(20).filter(movie => {
-                  return movie.get('poster_path') && new Date(movie.get('release_date')).getTime() < new Date().getTime();
-                });
-              }
-              fetchMovie(channelID, 'Bottom of the barrel', 'popularity.asc', filterFunction2);
+              fetchMovie(channelID, 'Bottom of the barrel', utils.withPosterPathAndNotInFuture, 'popularity.asc');
             break;
             case 'newmovie':
-              const filterFunction3 = function(movies) {
-                return movies.filter(movie => {
-                  return movie.get('poster_path') && new Date(movie.get('release_date')).getTime() < new Date().getTime();
-                }).take(20);
-              }
-              fetchMovie(channelID, 'Newnew', `release_date.desc`, filterFunction3);
+              const now = new Date();
+              const formattedDate = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDay()}`;
+              logger.info(formattedDate);
+              fetchMovie(channelID, 'Newnew', utils.withPosterPathAndNotInFuture, `release_date.desc`, `&release_date.lte=${formattedDate}`);
             break;
             case 'futuremovie':
-              const filterFunction4 = function(movies) {
-                return movies.take(20).filter(movie => {
-                  return movie.get('poster_path') && new Date(movie.get('release_date')).getTime() > new Date().getTime();
-                });
-              }
-              fetchMovie(channelID, 'FUTUREEE', `release_date.desc`, filterFunction4);
+              fetchMovie(channelID, 'FUTUREEE', utils.withPosterPathAndInFuture, `release_date.desc`);
             break;
             case 'oldmovie':
-              const filterFunction5 = function(movies) {
-                return movies.take(20).filter(movie => {
-                  return movie.get('poster_path');
-                });
-              }
-              fetchMovie(channelID, 'Old ass movie', 'release_date.asc', filterFunction5);
+              fetchMovie(channelID, 'Old ass movie', utils.withPosterPath, 'release_date.asc');
             break;
             case 'muchrevenue':
-              const filterFunction6 = function(movies) {
-                return movies.take(20).filter(movie => {
-                  return movie.get('poster_path');
-                });
-              }
-              fetchMovie(channelID, 'Get money', 'revenue.desc', filterFunction6);
+              fetchMovie(channelID, 'Get money', utils.withPosterPath, 'revenue.desc');
             break;
             case 'littlerevenue':
-              const filterFunction7 = function(movies) {
-                return movies.take(20).filter(movie => {
-                  return movie.get('poster_path');
-                });
-              }
-              fetchMovie(channelID, 'Stay broke', 'revenue.asc', filterFunction7);
+              fetchMovie(channelID, 'Stay broke', utils.withPosterPath, 'revenue.asc');
             break;
          }
      }
